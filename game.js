@@ -1,10 +1,11 @@
 /* =========================================================
-   Apocalypse VN Engine (Mobile)
-   - Background per scene
-   - Stats + auto endings
-   - Toast notifications on stat changes
-   - “강해짐/고립/붕괴”에 따라 선택지 문장(심리) 변형
-   - 적: 감염체 + 인간 약탈자(둘 다)
+   《남겨진 사람》 (Mobile Story Game Engine)
+   - 배경 전환 (scene.bg)
+   - 스탯: day, hp, food, power(강해짐), distance(고립), loss(상실)
+           party(동행 인원), trust(동행 신뢰)
+   - 스탯 변화 토스트(+/-) + HUD bump
+   - “강해짐/고립/붕괴”에 따라 선택지 문장(심리형) 변형
+   - 엔딩 명칭(정체성 타이틀) 포함
    ========================================================= */
 
 /* -------------------------
@@ -14,14 +15,19 @@ const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 function applyDelta(state, delta = {}) {
   const next = { ...state };
-  for (const [k, dv] of Object.entries(delta)) next[k] = (next[k] ?? 0) + dv;
+  for (const [k, dv] of Object.entries(delta)) {
+    next[k] = (next[k] ?? 0) + dv;
+  }
 
+  // clamp
+  next.day = clamp(next.day, 1, 9999);
   next.hp = clamp(next.hp, 0, 10);
   next.food = clamp(next.food, 0, 10);
   next.power = clamp(next.power, 0, 10);
   next.distance = clamp(next.distance, 0, 10);
   next.loss = clamp(next.loss, 0, 10);
-  next.day = clamp(next.day, 1, 999);
+  next.party = clamp(next.party, 0, 4);
+  next.trust = clamp(next.trust, 0, 10);
 
   return next;
 }
@@ -52,27 +58,16 @@ function meetsCond(state, cond) {
    1) Mind mode (심리 문장)
 ------------------------- */
 function getMindMode(state) {
-  // 상실감이 높으면, 문장 자체가 무너지는 톤으로
   if (state.loss >= 7) return "broken";
-
-  // 강해짐/고립 중 우세 판정
   if (state.power - state.distance >= 2) return "power";
   if (state.distance - state.power >= 2) return "distance";
-
   return "base";
 }
 
 function choiceText(choice, state) {
-  // variants가 없으면 기존 text 사용
   if (!choice.variants) return choice.text ?? "";
-
   const mode = getMindMode(state);
-  return (
-    choice.variants[mode] ??
-    choice.variants.base ??
-    choice.text ??
-    ""
-  );
+  return choice.variants[mode] ?? choice.variants.base ?? choice.text ?? "";
 }
 
 /* -------------------------
@@ -84,17 +79,19 @@ const defaultState = {
   food: 4,
   power: 0,     // 🛡 강해짐
   distance: 0,  // 🧱 고립
-  loss: 4       // 🖤 상실감
+  loss: 4,      // 🖤 상실감
+
+  party: 0,     // 👥 동행 인원
+  trust: 0      // 🤝 동행 신뢰
 };
 
 let state = { ...defaultState };
 
 /* -------------------------
-   3) Scenes (Story Data)
-   - bg 경로는 네 이미지 파일명에 맞게 바꾸면 됨.
+   3) Scenes
+   - bg 경로는 네 이미지 파일명에 맞게 교체하면 됨.
 ------------------------- */
 const scenes = {
-  // ======= PROLOGUE =======
   prologue: {
     bg: "./img/bg_ruins_1.jpg",
     text:
@@ -109,8 +106,8 @@ const scenes = {
         variants: {
           base: "다시는 잃지 않기 위해 강해진다.",
           power: "강해진다. 다음엔 내가 지킨다.",
-          distance: "강해진다… 그래야 혼자서도 산다.",
-          broken: "강해지면… 뭐가 달라질까. 그래도 해."
+          distance: "강해져야… 혼자서도 산다.",
+          broken: "강해지면… 뭐가 달라질까. 그래도."
         },
         next: "route_power_1",
         delta: { power: 2, loss: 1 }
@@ -127,7 +124,7 @@ const scenes = {
         delta: { distance: 2, loss: 1 }
       },
       {
-        label: "survive_first",
+        label: "just_survive",
         variants: {
           base: "지금은 생각하지 않는다. 일단 살아야 한다.",
           power: "감정은 나중에. 생존이 먼저다.",
@@ -140,7 +137,7 @@ const scenes = {
     ]
   },
 
-  // ======= ROUTE: POWER =======
+  /* ===== 강해짐 루트 ===== */
   route_power_1: {
     bg: "./img/bg_training.jpg",
     text:
@@ -150,7 +147,7 @@ const scenes = {
       "다음번엔—지킬 수 있게.",
     choices: [
       {
-        label: "search_armory",
+        label: "warehouse",
         variants: {
           base: "근처 창고를 수색한다 (위험)",
           power: "창고를 턴다. 무기부터 확보한다.",
@@ -161,7 +158,7 @@ const scenes = {
         delta: { food: 1, loss: 1 }
       },
       {
-        label: "train",
+        label: "training",
         variants: {
           base: "혼자 훈련 루틴을 만든다",
           power: "훈련한다. 내 몸을 무기로 만든다.",
@@ -206,7 +203,7 @@ const scenes = {
     ]
   },
 
-  // ======= ROUTE: DISTANCE =======
+  /* ===== 고립 루트 ===== */
   route_distance_1: {
     bg: "./img/bg_hallway.jpg",
     text:
@@ -226,7 +223,7 @@ const scenes = {
         delta: { distance: 1, loss: -1 }
       },
       {
-        label: "stealth_route",
+        label: "stealth",
         variants: {
           base: "기척이 나면 피하는 동선을 만든다",
           power: "피하되, 필요하면 맞서겠다.",
@@ -248,7 +245,7 @@ const scenes = {
       "…정말로?",
     choices: [
       {
-        label: "choose_silence",
+        label: "silence",
         variants: {
           base: "조용함을 선택한다",
           power: "정보가 없으면 판단도 못 해. 하지만… 지금은 조용히.",
@@ -259,7 +256,7 @@ const scenes = {
         delta: { distance: 1 }
       },
       {
-        label: "turn_back_on",
+        label: "turn_on",
         variants: {
           base: "잠깐만. 다시 켜볼까(흔들림)",
           power: "정보는 무기다. 잠깐만 확인.",
@@ -280,7 +277,7 @@ const scenes = {
       "발자국 소리조차 남기지 않는 방식으로.",
     choices: [
       {
-        label: "move_shadow",
+        label: "shadow",
         variants: {
           base: "그늘로 이동한다",
           power: "그늘로 이동. 필요하면 역습한다.",
@@ -291,7 +288,7 @@ const scenes = {
         delta: { distance: 1 }
       },
       {
-        label: "risk_for_food",
+        label: "risk_food",
         variants: {
           base: "식량을 위해 위험을 감수한다",
           power: "식량은 전쟁이다. 가져온다.",
@@ -304,17 +301,17 @@ const scenes = {
     ]
   },
 
-  // ======= DAY LOOP START =======
+  /* ===== Day start (공통) ===== */
   day_start: {
     bg: "./img/bg_crossroad.jpg",
     text:
-      "하루 " + "—" + " 또 시작됐다.\n" +
+      "📅 DAY {day}\n\n" +
+      "하루가 또 시작됐다.\n" +
       "물과 식량, 그리고 조용한 위험.\n" +
       "오늘의 선택이 오늘 밤을 만든다.",
-    // NOTE: day 표시를 동적으로 넣고 싶으면 render()에서 text 가공해도 됨.
     choices: [
       {
-        label: "go_market",
+        label: "market",
         variants: {
           base: "폐마트로 간다 (식량 확보)",
           power: "폐마트로 간다. 위험하면 내가 처리한다.",
@@ -325,7 +322,7 @@ const scenes = {
         delta: { food: 2, hp: -1, loss: 1 }
       },
       {
-        label: "go_houses",
+        label: "houses",
         variants: {
           base: "주택가를 돈다 (안전 우선)",
           power: "주택가를 훑는다. 위험 요소부터 제거한다.",
@@ -336,7 +333,19 @@ const scenes = {
         delta: { hp: 1, food: -1 }
       },
       {
-        label: "avoid_traces",
+        label: "follow_signal",
+        variants: {
+          base: "연기/불빛을 따라간다 (사람일 수도)",
+          power: "불빛을 확인한다. 정보는 무기다.",
+          distance: "…함정일 수도. 그래도 확인만.",
+          broken: "누군가… 있을까."
+        },
+        next: "meet_survivors",
+        delta: { loss: 1 },
+        cond: { distance_lte: 9 }
+      },
+      {
+        label: "avoid_people",
         variants: {
           base: "사람 흔적을 피한다 (고립 강화)",
           power: "피하지 않는다. 다만 통제할 뿐.",
@@ -362,7 +371,7 @@ const scenes = {
     ]
   },
 
-  // ======= MARKET (human + infected) =======
+  /* ===== Market: 인간 약탈자 중심 + 감염체 변수 ===== */
   market_1: {
     bg: "./img/bg_market.jpg",
     text:
@@ -383,10 +392,10 @@ const scenes = {
         delta: { distance: 1 }
       },
       {
-        label: "confront",
+        label: "face",
         variants: {
           base: "대면한다",
-          power: "대면한다. 먼저 주도권을 잡는다.",
+          power: "대면한다. 주도권을 잡는다.",
           distance: "대면… 최소한의 말만.",
           broken: "대면… 뭐가 달라지는데."
         },
@@ -413,16 +422,16 @@ const scenes = {
     bg: "./img/bg_market_dark.jpg",
     text:
       "선반 뒤에 몸을 붙였다.\n" +
-      "그림자 사이로 보이는 실루엣—\n\n" +
-      "낮게 중얼거린다.\n" +
-      "…사람이다. 하지만 손에 든 건 칼.\n" +
-      "약탈자다.",
+      "실루엣—사람이다. 손에 든 건 칼.\n" +
+      "약탈자.\n\n" +
+      "그리고 멀리서… 감염체의 끙끙거림.\n" +
+      "둘 다 끌려올 수 있다.",
     choices: [
       {
-        label: "wait_out",
+        label: "wait",
         variants: {
           base: "지나가길 기다린다",
-          power: "숨었다가 기회 보면 따라간다.",
+          power: "숨었다가 따라가 약점을 본다.",
           distance: "기다린다. 안 들키면 된다.",
           broken: "…빨리 지나가."
         },
@@ -449,8 +458,8 @@ const scenes = {
     text:
       "“거기 누구야?”\n" +
       "상대의 목소리가 날카롭다.\n\n" +
-      "눈이 마주친 순간, 상대가 웃는다.\n" +
-      "—사람이지만, 사람 같지 않다.",
+      "웃는다. 사람인데—사람 같지 않다.\n" +
+      "약탈자의 웃음이다.",
     choices: [
       {
         label: "negotiate",
@@ -464,7 +473,7 @@ const scenes = {
         delta: { food: -1, loss: 0 }
       },
       {
-        label: "back_off",
+        label: "back",
         variants: {
           base: "천천히 물러난다",
           power: "물러난다. 싸움은 선택이다.",
@@ -475,7 +484,7 @@ const scenes = {
         delta: { distance: 1, loss: -1 }
       },
       {
-        label: "draw_weapon",
+        label: "draw",
         variants: {
           base: "무기를 꺼낸다",
           power: "무기를 꺼낸다. 끝까지 간다.",
@@ -496,8 +505,7 @@ const scenes = {
       "통조림—그리고 가방.\n\n" +
       "뒤에서 욕설과 발소리.\n" +
       "약탈자다.\n" +
-      "게다가… 멀리서 이상한 끙끙거림.\n" +
-      "감염체까지 끌려온다.",
+      "게다가 감염체까지 소리에 끌린다.",
     choices: [
       {
         label: "sprint",
@@ -511,10 +519,10 @@ const scenes = {
         delta: { hp: -1 }
       },
       {
-        label: "hide_in_store",
+        label: "hide_store",
         variants: {
           base: "가게 안쪽으로 숨는다",
-          power: "숨었다가 역으로 각개격파.",
+          power: "숨었다가 역으로 끊는다.",
           distance: "숨는다. 조용히, 조용히.",
           broken: "숨자…"
         },
@@ -524,13 +532,12 @@ const scenes = {
     ]
   },
 
-  // ======= HOUSES (infected) =======
+  /* ===== Houses: 감염체 ===== */
   houses_1: {
     bg: "./img/bg_houses.jpg",
     text:
       "조용한 골목.\n" +
       "문 하나를 열면 또 다른 하루가 열린다.\n\n" +
-      "하지만 조용함은 늘 함정이었다.\n" +
       "…문 너머에서, 긁는 소리.",
     choices: [
       {
@@ -545,7 +552,7 @@ const scenes = {
         delta: { food: 1, hp: -1 }
       },
       {
-        label: "leave",
+        label: "pass",
         variants: {
           base: "지나친다",
           power: "지나친다. 싸움은 자원 낭비다.",
@@ -563,12 +570,11 @@ const scenes = {
     text:
       "안은 엉망이다.\n" +
       "식탁 위의 빈 약병.\n\n" +
-      "그리고 부엌에서—\n" +
-      "감염체가 몸을 돌린다.\n" +
+      "부엌에서—감염체가 몸을 돌린다.\n" +
       "눈이… 텅 비어 있다.",
     choices: [
       {
-        label: "fight_infected",
+        label: "fight_inf",
         variants: {
           base: "맞서 싸운다",
           power: "맞서 싸운다. 지금 아니면 더 위험해진다.",
@@ -592,19 +598,18 @@ const scenes = {
     ]
   },
 
-  // ======= SOLO (psych) =======
+  /* ===== Solo psych ===== */
   solo_1: {
     bg: "./img/bg_solo.jpg",
     text:
       "혼자는 빠르고, 조용하고, 예측 가능하다.\n" +
-      "그런데도 가끔—\n" +
-      "옆이 비어 있는 게 너무 크게 느껴졌다.",
+      "그런데도 가끔—옆이 비어 있는 게 너무 크게 느껴졌다.",
     choices: [
       {
-        label: "erase_thought",
+        label: "erase",
         variants: {
           base: "생각을 지운다",
-          power: "생각을 지운다. 감정은 약점이다.",
+          power: "지운다. 감정은 약점이다.",
           distance: "지운다. 어차피 혼자다.",
           broken: "지워… 지워…"
         },
@@ -612,7 +617,7 @@ const scenes = {
         delta: { loss: -1 }
       },
       {
-        label: "hold_memory",
+        label: "memory",
         variants: {
           base: "기억을 꺼낸다",
           power: "기억을 꺼낸다. 다음엔 지킬 수 있게.",
@@ -625,56 +630,154 @@ const scenes = {
     ]
   },
 
-  // ======= FIGHT PATH (mixed enemy) =======
+  /* ===== Fight: 감염체 + 약탈자 ===== */
   fight_1: {
     bg: "./img/bg_fight.jpg",
     text:
-      "위험은 늘 예상보다 가까웠다.\n" +
       "골목 끝에 약탈자 둘.\n" +
       "그리고 그 뒤를 쫓아오는 감염체 하나.\n\n" +
       "서로를 이용하려는 눈빛.\n" +
       "이곳은 지옥이다.",
     choices: [
       {
-        label: "push_through_fight",
+        label: "push",
         variants: {
           base: "밀어붙인다",
           power: "밀어붙인다. 다 넘어뜨리고 지나간다.",
-          distance: "밀어붙인다. 틈만 보면 빠져나간다.",
+          distance: "틈만 보면 빠져나간다.",
           broken: "밀어… 다 끝내."
         },
         next: "after_encounter",
         delta: { power: 1, hp: -1, loss: 1 }
       },
       {
-        label: "let_them_clash",
+        label: "let_clash",
         variants: {
           base: "서로 싸우게 둔다 (틈새 이동)",
-          power: "붙게 둔다. 나는 최적의 순간만 친다.",
+          power: "붙게 둔다. 최적의 순간만 친다.",
           distance: "붙게 둔다. 나는 조용히 빠진다.",
           broken: "싸워… 다 같이 망해."
         },
         next: "after_encounter",
-        delta: { distance: 1, loss: 0 }
+        delta: { distance: 1 }
       }
     ]
   },
 
-  // ======= END OF DAY =======
+  /* ===== Companion route entry ===== */
+  meet_survivors: {
+    bg: "./img/bg_meet.jpg",
+    text:
+      "폐허 속에서 불빛이 흔들렸다.\n" +
+      "사람이다. 살아 있는 사람.\n\n" +
+      "상처투성이 눈빛이 나를 훑는다.\n" +
+      "“혼자야?… 우리랑 같이 가.”",
+    choices: [
+      {
+        label: "join",
+        variants: {
+          base: "…그래. 한 번만 더 믿어본다.",
+          power: "좋아. 하지만 내 규칙대로 움직여.",
+          distance: "가깝게는 안 돼. 그래도… 같이 가자.",
+          broken: "…나도 사람 옆에 있어도 될까."
+        },
+        next: "party_rules",
+        delta: { party: 2, trust: 2, loss: -1 }
+      },
+      {
+        label: "refuse",
+        variants: {
+          base: "아니. 난 혼자가 편해.",
+          power: "지금은 아니야. 짐은 늘어난다.",
+          distance: "싫어. 엮이면 끝이야.",
+          broken: "…미안. 못 해."
+        },
+        next: "after_encounter",
+        delta: { distance: 1 }
+      }
+    ]
+  },
+
+  party_rules: {
+    bg: "./img/bg_camp.jpg",
+    text:
+      "불 앞에서 서로의 손을 확인했다.\n" +
+      "누구도 완전히 믿을 수는 없지만,\n" +
+      "함께 가려면 규칙이 필요하다.",
+    choices: [
+      {
+        label: "share",
+        variants: {
+          base: "식량을 나눈다 (신뢰↑, 식량↓)",
+          power: "나눠. 대신 모두 책임져. (신뢰↑)",
+          distance: "최소한만 나눠. (신뢰 소폭↑)",
+          broken: "…그래, 나눠."
+        },
+        next: "party_event1",
+        delta: { food: -1, trust: 2 }
+      },
+      {
+        label: "keep",
+        variants: {
+          base: "식량은 각자 챙긴다 (신뢰↓)",
+          power: "각자 챙겨. 흔들리면 죽는다. (신뢰↓)",
+          distance: "엮이지 않는다. (신뢰↓)",
+          broken: "…나한테도 남아야 해."
+        },
+        next: "party_event1",
+        delta: { trust: -1 }
+      }
+    ]
+  },
+
+  party_event1: {
+    bg: "./img/bg_party_street.jpg",
+    text:
+      "동행은 쉬운 길이 아니다.\n" +
+      "소리도, 흔적도 커진다.\n\n" +
+      "멀리서 감염체가 몰려오는 게 보인다.\n" +
+      "그리고—골목 반대편엔 약탈자.",
+    choices: [
+      {
+        label: "fight_together",
+        variants: {
+          base: "함께 싸워서 돌파한다",
+          power: "내가 앞에 선다. 너희는 뒤를 지켜. (신뢰↑)",
+          distance: "짧게 끝내고 바로 빠진다.",
+          broken: "…다 끝내자."
+        },
+        next: "after_encounter",
+        delta: { hp: -1, power: 1, trust: 1 }
+      },
+      {
+        label: "sacrifice",
+        variants: {
+          base: "누군가를 미끼로 삼고 도망친다 (배드)",
+          power: "살려면 결단이 필요해. (신뢰↓↓)",
+          distance: "원래 혼자였어. (신뢰↓↓)",
+          broken: "…미안."
+        },
+        next: "after_encounter",
+        delta: { trust: -3, loss: 2 }
+      }
+    ]
+  },
+
+  /* ===== Day end hub: 하루 넘김(필수) ===== */
   after_encounter: {
     bg: "./img/bg_sunset.jpg",
     text:
       "해가 기울었다.\n" +
       "오늘도 살아남았다.\n\n" +
-      "문제는… 내일도 같은 방식으로 살아남을 수 있냐는 거다.",
+      "이제 남은 건—오늘을 ‘끝내는’ 일이다.",
     choices: [
       {
-        label: "sleep",
+        label: "camp_sleep",
         variants: {
-          base: "오늘을 마무리한다",
-          power: "정비하고 쉰다. 내일은 더 단단해진다.",
-          distance: "쉰다. 누구도 필요 없다.",
-          broken: "…끝내자. 오늘도."
+          base: "야영하고 하루를 넘긴다 (DAY +1)",
+          power: "정비하고 야영한다. 내일은 더 강해진다. (DAY +1)",
+          distance: "흔적을 지우고 야영한다. 들키지 않는다. (DAY +1)",
+          broken: "…눈 감자. (DAY +1)"
         },
         next: "end_check",
         delta: { food: -1, day: 1 }
@@ -682,7 +785,6 @@ const scenes = {
     ]
   },
 
-  // ======= ENDING CHECK =======
   end_check: {
     bg: "./img/bg_night.jpg",
     text:
@@ -694,7 +796,7 @@ const scenes = {
         label: "continue",
         variants: {
           base: "계속",
-          power: "계속. 더 강해진다.",
+          power: "계속. 더 단단해진다.",
           distance: "계속. 더 조용해진다.",
           broken: "계속…"
         },
@@ -707,66 +809,106 @@ const scenes = {
   resolve_end: {
     bg: "./img/bg_night.jpg",
     text: "…",
-    choices: [] // 상태 기반 자동 분기
+    choices: [] // 자동 분기
   },
 
-  // ======= ENDINGS =======
-  end_dead: {
-    bg: "./img/bg_black.jpg",
-    text: "시야가 어두워졌다.\n(엔딩: 사망)",
-    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
-  },
-  end_starve: {
-    bg: "./img/bg_empty.jpg",
-    text: "배고픔은 통증이 아니라 공백이 되었다.\n(엔딩: 아사)",
-    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
-  },
-  end_break: {
-    bg: "./img/bg_rain.jpg",
-    text:
-      "마음이 먼저 무너졌다.\n" +
-      "살아 있어도, 이미 끝난 것 같았다.\n(엔딩: 붕괴)",
-    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
-  },
+  /* ====== ENDINGS (명칭 포함) ====== */
   end_guardian: {
     bg: "./img/bg_base.jpg",
     text:
+      "🛡 「수호자가 된 사람」\n\n" +
       "나는 강해졌다.\n" +
       "지키는 건 두려웠지만—도망치지 않기로 했다.\n\n" +
-      "누군가가 내 옆에 서도, 이번엔… 손을 놓지 않는다.\n(엔딩: 수호자)",
+      "누군가가 내 옆에 서도, 이번엔… 손을 놓지 않는다.",
     choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
   },
+
   end_lonely: {
     bg: "./img/bg_road.jpg",
     text:
+      "🧱 「아무도 두지 않은 생존자」\n\n" +
       "나는 끝까지 혼자였다.\n" +
       "아무도 잃지 않았다.\n\n" +
-      "대신, 아무도 남지 않았다.\n(엔딩: 고독한 생존자)",
+      "대신, 아무도 남지 않았다.",
     choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
   },
+
   end_hollow: {
     bg: "./img/bg_room.jpg",
     text:
+      "🕳 「텅 빈 껍데기」\n\n" +
       "살아남는 법은 배웠다.\n" +
-      "하지만 살아가는 법은—배우지 못했다.\n(엔딩: 텅 빈 생존)",
+      "하지만 살아가는 법은—배우지 못했다.",
+    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
+  },
+
+  end_together: {
+    bg: "./img/bg_together.jpg",
+    text:
+      "🤝 「끝까지 함께한 사람」\n\n" +
+      "불완전한 사람들이었지만,\n" +
+      "서로를 버리지 않기로 선택했다.\n\n" +
+      "혼자였던 나는—다시 ‘우리’가 되었다.",
+    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
+  },
+
+  end_lost_all: {
+    bg: "./img/bg_lost_all.jpg",
+    text:
+      "🩸 「다시 모든 것을 잃은 자」\n\n" +
+      "함께였기에 더 크게 잃었다.\n" +
+      "한 번의 선택, 한 번의 실수,\n" +
+      "한 번의 배신.\n\n" +
+      "그리고 나는 다시 혼자가 됐다.",
+    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
+  },
+
+  end_dead: {
+    bg: "./img/bg_black.jpg",
+    text:
+      "☠ 「여기서 끝난 생존」\n\n" +
+      "시야가 어두워졌다.\n" +
+      "끝까지 버티지 못했다.",
+    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
+  },
+
+  end_starve: {
+    bg: "./img/bg_empty.jpg",
+    text:
+      "🍂 「굶주림에 삼켜진 사람」\n\n" +
+      "배고픔은 통증이 아니라 공백이 되었다.\n" +
+      "세상이 비어 있었다.",
+    choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
+  },
+
+  end_break: {
+    bg: "./img/bg_rain.jpg",
+    text:
+      "🖤 「마음이 먼저 무너진 자」\n\n" +
+      "마음이 먼저 무너졌다.\n" +
+      "살아 있어도, 이미 끝난 것 같았다.",
     choices: [{ text: "처음부터", next: "prologue", delta: "RESET" }]
   }
 };
 
 /* -------------------------
    4) DOM
+   (없어도 에러 안 나게 optional 처리)
 ------------------------- */
 const gameEl = document.getElementById("game");
 const textEl = document.getElementById("text");
 const choicesEl = document.getElementById("choices");
+
 const dayEl = document.getElementById("day");
 const hpEl = document.getElementById("hp");
 const foodEl = document.getElementById("food");
 const powerEl = document.getElementById("power");
 const distanceEl = document.getElementById("distance");
 const lossEl = document.getElementById("loss");
+const partyEl = document.getElementById("party");
+const trustEl = document.getElementById("trust");
 
-const toastLayer = document.getElementById("toastLayer"); // index.html에 <div id="toastLayer"></div> 필요
+const toastLayer = document.getElementById("toastLayer"); // index.html에 추가해두면 뜸
 const restartBtn = document.getElementById("restart");
 
 /* -------------------------
@@ -784,7 +926,7 @@ function showToast(message, tone = "pos") {
 function bump(el) {
   if (!el) return;
   el.classList.remove("bump");
-  void el.offsetWidth; // reflow
+  void el.offsetWidth;
   el.classList.add("bump");
 }
 
@@ -792,15 +934,18 @@ function bump(el) {
    6) HUD / BG / Reset
 ------------------------- */
 function updateHUD() {
-  hpEl.textContent = `❤️ ${state.hp}`;
-  foodEl.textContent = `🍔 ${state.food}`;
-  powerEl.textContent = `🦾 ${state.power}`;
-  distanceEl.textContent = `🧱 ${state.distance}`;
-  lossEl.textContent = `🖤 ${state.loss}`;
-  dayEl.textContent = `📅 DAY ${state.day}`;
+  if (dayEl) dayEl.textContent = `📅 DAY ${state.day}`;
+  if (hpEl) hpEl.textContent = `❤️ ${state.hp}`;
+  if (foodEl) foodEl.textContent = `🍞 ${state.food}`;
+  if (powerEl) powerEl.textContent = `🛡 ${state.power}`;
+  if (distanceEl) distanceEl.textContent = `🧱 ${state.distance}`;
+  if (lossEl) lossEl.textContent = `🖤 ${state.loss}`;
+  if (partyEl) partyEl.textContent = `👥 ${state.party}`;
+  if (trustEl) trustEl.textContent = `🤝 ${state.trust}`;
 }
 
 function setBackground(bgPath) {
+  if (!gameEl) return;
   gameEl.style.backgroundImage = bgPath ? `url("${bgPath}")` : "none";
 }
 
@@ -816,16 +961,20 @@ function resolveEndingFromState() {
   const auto = checkAutoEnding(state);
   if (auto) return auto;
 
-  // 수호자 엔딩: 강해짐 높고 고립 낮음 + 어느 정도 체력
+  // 🤝 동행 엔딩
+  if (state.party >= 2 && state.trust >= 7 && state.distance <= 7) return "end_together";
+  if (state.party >= 2 && state.trust <= 1) return "end_lost_all";
+
+  // 🛡 수호자
   if (state.power >= 6 && state.distance <= 4 && state.hp >= 3) return "end_guardian";
 
-  // 고독 엔딩: 고립 매우 높음
+  // 🧱 고립
   if (state.distance >= 7) return "end_lonely";
 
-  // 텅 빈 생존: 강해짐도 높고 상실도 높음 (계속 지키려다 닫혀버림)
+  // 🕳 텅 빈 생존
   if (state.power >= 5 && state.loss >= 7) return "end_hollow";
 
-  // 아직 조건이 애매하면 루프 계속
+  // 아직이면 계속 루프
   return "day_start";
 }
 
@@ -834,87 +983,87 @@ function resolveEndingFromState() {
 ------------------------- */
 function render(sceneId) {
   if (sceneId === "resolve_end") {
-    const endId = resolveEndingFromState();
-    return render(endId);
+    return render(resolveEndingFromState());
   }
 
   const scene = scenes[sceneId];
   if (!scene) return;
 
-  // bg, text
   setBackground(scene.bg);
 
-  // day text 동적 치환(원하면)
-  // scene.text 안에 {day}가 있으면 현재 day로 바꿔줌
   const rawText = scene.text ?? "";
-  textEl.textContent = rawText.replaceAll("{day}", String(state.day));
+  if (textEl) textEl.textContent = rawText.replaceAll("{day}", String(state.day));
 
-  // choices
-  choicesEl.innerHTML = "";
+  if (choicesEl) choicesEl.innerHTML = "";
 
-  const availableChoices = (scene.choices || []).filter(c => meetsCond(state, c.cond));
+  const available = (scene.choices || []).filter(c => meetsCond(state, c.cond));
 
-  availableChoices.forEach(choice => {
+  available.forEach(choice => {
     const btn = document.createElement("button");
     btn.className = "choice";
     btn.type = "button";
-
     btn.textContent = choiceText(choice, state);
 
     btn.addEventListener("click", () => {
-      // RESET
       if (choice.delta === "RESET") {
         resetGame();
         return render(choice.next);
       }
 
-      // before/after diff
       const before = { ...state };
       state = applyDelta(state, choice.delta);
 
       const diff = {
+        day: state.day - before.day,
         hp: state.hp - before.hp,
         food: state.food - before.food,
         power: state.power - before.power,
         distance: state.distance - before.distance,
-        loss: state.loss - before.loss
+        loss: state.loss - before.loss,
+        party: state.party - before.party,
+        trust: state.trust - before.trust
       };
 
-      // auto endings
+      // Auto endings
       const autoEnd = checkAutoEnding(state);
+
       updateHUD();
 
-      // toast
+      // Toast (변한 것만)
       const parts = [];
+      if (diff.day) parts.push(`+${diff.day} 📅`);
       if (diff.hp) parts.push(`${diff.hp > 0 ? "+" : ""}${diff.hp} ❤️`);
       if (diff.food) parts.push(`${diff.food > 0 ? "+" : ""}${diff.food} 🍞`);
       if (diff.power) parts.push(`${diff.power > 0 ? "+" : ""}${diff.power} 🛡`);
       if (diff.distance) parts.push(`${diff.distance > 0 ? "+" : ""}${diff.distance} 🧱`);
       if (diff.loss) parts.push(`${diff.loss > 0 ? "+" : ""}${diff.loss} 🖤`);
+      if (diff.party) parts.push(`${diff.party > 0 ? "+" : ""}${diff.party} 👥`);
+      if (diff.trust) parts.push(`${diff.trust > 0 ? "+" : ""}${diff.trust} 🤝`);
 
       if (parts.length) {
         const tone = parts.some(p => p.trim().startsWith("-")) ? "neg" : "pos";
         showToast(parts.join("   "), tone);
       }
 
-      // bump changed stats
+      // bump changed HUD pills
+      if (diff.day) bump(dayEl);
       if (diff.hp) bump(hpEl);
       if (diff.food) bump(foodEl);
       if (diff.power) bump(powerEl);
       if (diff.distance) bump(distanceEl);
       if (diff.loss) bump(lossEl);
+      if (diff.party) bump(partyEl);
+      if (diff.trust) bump(trustEl);
 
       if (autoEnd) return render(autoEnd);
-
-      // next
       render(choice.next);
     });
 
     choicesEl.appendChild(btn);
   });
 
-  // fallback
-  if (availableChoices.length === 0) {
+  // fallback 버튼
+  if (available.length === 0 && choicesEl) {
     const btn = document.createElement("button");
     btn.className = "choice";
     btn.type = "button";
