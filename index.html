@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>아포칼립스 스토리 게임</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main id="game" role="application" aria-label="스토리 게임">
+    <div id="overlay" aria-hidden="true"></div>
+    <div id="toastLayer" aria-live="polite" aria-atomic="true"></div>
+<div id="toastLayer" aria-live="polite" aria-atomic="true"></div>
+    <header id="hud" aria-label="상태">
+      <div class="hud-row">
+        <span class="hud-pill" id="hp">❤️ 0</span>
+        <span class="hud-pill" id="food">🍔 0</span>
+        <span class="hud-pill" id="power">🦾 0</span>
+        <span class="hud-pill" id="distance">🧱 0</span>
+        <span class="hud-pill" id="loss">🖤 0</span>
+        <span class="hud-pill" id="day">📅 DAY 1</span>
+      </div>
+    </header>
+
+    <section id="ui" aria-live="polite">
+      <p id="text"></p>
+
+      <div id="choices" aria-label="선택지"></div>
+
+      <div id="controls">
+        <button id="restart" type="button">처음부터</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
